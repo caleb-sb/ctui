@@ -30,7 +30,8 @@ to tear down the {ticket} worktree."""
 # them to the ticket's Claude session, wrapped in review_prompt, and clears them in tuicr.
 # Quitting without exporting (:q) sends nothing. review_prompt also takes {repo} (the submodule's
 # name), {repo_path} (its path) and {comments} (what tuicr exported).
-tuicr_cmd = "tuicr"
+# Release builds of ctui carry tuicr. Set tuicr_cmd to use another one, e.g. "tuicr" from PATH.
+tuicr_cmd = ""
 review_prompt = """My review comments on {repo} in the {ticket} worktree. File paths are relative to {repo_path}.
 
 {comments}"""

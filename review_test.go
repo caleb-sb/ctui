@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,5 +41,31 @@ func TestRepoStatus(t *testing.T) {
 	}
 	if got := ri.summary(); got != "2 commits · 1 file dirty" {
 		t.Errorf("summary: %q", got)
+	}
+}
+
+func TestUnpackTuicr(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write([]byte("#!/bin/sh\necho bundled\n"))
+	zw.Close()
+	old := bundledTuicr
+	bundledTuicr = gz.Bytes()
+	defer func() { bundledTuicr = old }()
+
+	p, bundled, err := tuicrPath(Config{})
+	if err != nil || !bundled {
+		t.Fatalf("tuicrPath: %q %v %v", p, bundled, err)
+	}
+	out, err := exec.Command(p).Output()
+	if err != nil || string(out) != "bundled\n" {
+		t.Fatalf("running unpacked tuicr: %q %v", out, err)
+	}
+	if p2, _, _ := tuicrPath(Config{}); p2 != p {
+		t.Errorf("second call unpacked to %q, want %q", p2, p)
+	}
+	if _, bundled, _ := tuicrPath(Config{TuicrCmd: "sh"}); bundled {
+		t.Error("tuicr_cmd should win over the bundled copy")
 	}
 }

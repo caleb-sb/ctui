@@ -14,6 +14,7 @@ const usage = `usage:
   ctui type TICKET TYPE    set the kind of work (e.g. bug, feat, review) and print its stages
   ctui stage TICKET STAGE  set the stage the work is at
   ctui hook       Claude Code hook handler (installed automatically through --settings)
+  ctui licenses   print the licences of software bundled with ctui
 `
 
 func main() {
@@ -36,6 +37,9 @@ func main() {
 			os.Exit(2)
 		}
 		os.Exit(runExec(os.Args[2]))
+	case "licenses", "licences":
+		fmt.Printf("ctui bundles tuicr %s (https://github.com/agavra/tuicr) in release builds.\n\n%s", tuicrVersion, tuicrLicense)
+		return
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return

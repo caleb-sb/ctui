@@ -19,7 +19,7 @@ type Config struct {
 	StartPrompt  string   `toml:"start_prompt"`  // first prompt for a new ticket
 	FinishPrompt string   `toml:"finish_prompt"` // sent by `f`
 
-	TuicrCmd      string `toml:"tuicr_cmd"`      // tuicr binary, for reviewing diffs (`d`)
+	TuicrCmd      string `toml:"tuicr_cmd"`      // tuicr to run for reviewing diffs (`d`); empty: the bundled one, else tuicr on PATH
 	ReviewPrompt  string `toml:"review_prompt"`  // wraps the comments exported from tuicr
 	ApprovePrompt string `toml:"approve_prompt"` // sent by `a` in the review picker
 
@@ -50,7 +50,6 @@ func defaultConfig() Config {
 		TicketPrefix:  "PROJ",
 		StartPrompt:   defaultStartPrompt,
 		FinishPrompt:  defaultFinishPrompt,
-		TuicrCmd:      "tuicr",
 		ReviewPrompt:  defaultReviewPrompt,
 		ApprovePrompt: defaultApprovePrompt,
 		Types:         defaultTypes(),

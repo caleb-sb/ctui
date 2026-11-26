@@ -78,6 +78,7 @@ func plural(n int, s string) string {
 type tuicrDoneMsg struct {
 	ticket string
 	repo   repoInfo
+	bin    string // the tuicr that ran
 	out    string
 	err    error
 }
@@ -119,19 +120,23 @@ func (m *model) reviewRow() (row, bool) {
 }
 
 func (m *model) runTuicr(ri repoInfo) tea.Cmd {
-	bin, err := exec.LookPath(m.cfg.TuicrCmd)
+	bin, bundled, err := tuicrPath(m.cfg)
 	if err != nil {
-		m.say(false, "%s not found: install tuicr or set tuicr_cmd", m.cfg.TuicrCmd)
+		m.say(false, "%v", err)
 		return nil
 	}
 	ticket := m.reviewTicket
 	var out bytes.Buffer
 	// tuicr draws on the terminal and, with --stdout, prints the exported review on stdout.
-	cmd := exec.Command(bin, "--stdout")
+	args := []string{"--stdout"}
+	if bundled {
+		args = append(args, "--no-update-check") // it's updated with ctui, not by itself
+	}
+	cmd := exec.Command(bin, args...)
 	cmd.Dir = ri.Path
 	cmd.Stdout = &out
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return tuicrDoneMsg{ticket: ticket, repo: ri, out: out.String(), err: err}
+		return tuicrDoneMsg{ticket: ticket, repo: ri, bin: bin, out: out.String(), err: err}
 	})
 }
 
@@ -164,7 +169,7 @@ func (m *model) tuicrDone(msg tuicrDoneMsg) {
 		m.say(false, "%v (comments kept in tuicr)", err)
 		return
 	}
-	if err := clearTuicrComments(m.cfg.TuicrCmd, msg.repo.Path); err != nil {
+	if err := clearTuicrComments(msg.bin, msg.repo.Path); err != nil {
 		m.say(false, "sent %s comments to %s, but couldn't clear them in tuicr: %v", msg.repo.Name, msg.ticket, err)
 		return
 	}

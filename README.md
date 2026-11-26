@@ -78,8 +78,8 @@ checked out in the ticket's worktree, each with its branch and how much has chan
   press `y`: with a selection, `y` copies it to the clipboard instead of exporting.
 
 Comments aren't sent while the session is showing a prompt or Claude isn't running; they stay in tuicr
-and you can export them again later. tuicr is a separate install (`tuicr_cmd` sets its path). Its own
-settings live in tuicr's config; `code_context = true` there puts the code each comment is about in the
+and you can export them again later. The release binaries carry tuicr, so it needn't be installed. To use
+another tuicr, set `tuicr_cmd`. Its own settings live in tuicr's config; `code_context = true` there puts the code each comment is about in the
 export, which helps Claude.
 
 ## Install
@@ -101,8 +101,13 @@ mkdir -p ~/.config/ctui && curl -fL -o ~/.config/ctui/config.toml \
 The binaries aren't notarized. On macOS a file downloaded with `curl` runs as-is. If you download it
 in a browser, clear the quarantine flag first: `xattr -d com.apple.quarantine ~/.local/bin/ctui`.
 
-Requires tmux (3.0+) and Claude Code, plus [tuicr](https://github.com/agavra/tuicr) for reviewing diffs. To build from source (Go 1.27+):
+Requires tmux (3.0+) and Claude Code. To build from source (Go 1.27+):
 `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o ctui .`
+That build uses `tuicr` from `PATH`. To carry tuicr like the releases do (macOS arm64 and Linux x86-64),
+run `scripts/fetch-tuicr.sh` first and add `-tags bundle_tuicr`.
+
+The release binaries include [tuicr](https://github.com/agavra/tuicr) 0.30.0, which is MIT licensed
+(`third_party/tuicr/LICENSE`, or `ctui licenses`). It's unpacked to `~/.cache/ctui/` the first time you use it.
 
 ## Use
 
