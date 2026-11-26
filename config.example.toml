@@ -1,0 +1,24 @@
+# ~/.config/ctui/config.toml. Every key is optional; these are the defaults.
+
+# Directory that holds main/ and the per-ticket worktrees.
+root = "~/project"
+main = "main"
+
+# tmux session that holds the dashboard and one window per ticket.
+tmux_session = "claude"
+
+claude_cmd = "claude"
+claude_args = []            # e.g. ["--model", "opus"]
+
+# Typing "5170" in the new-session prompt becomes "PROJ-5170".
+ticket_prefix = "PROJ"
+
+# Placeholders: {ticket}, {worktree} (root/ticket), {root}, {ctui} (path to this binary).
+# Claude always starts in root/main.
+start_prompt = """We're starting work on {ticket}. Read context.md, then fetch {ticket} from Jira. \
+Once you've read it, run {ctui} blurb {ticket} "<one-line summary of the ticket, under 60 characters>" so it shows on my dashboard. \
+Decide which submodules the change touches and use scripts/new-feature.sh to create the {ticket} worktree \
+with those submodules checked out. Then summarize the ticket and your plan, and wait for my go-ahead before changing code."""
+
+finish_prompt = """We're wrapping up {ticket}. Check that everything in the {ticket} worktree is committed and pushed \
+and tell me if anything isn't. If it's all clean, run scripts/finish-feature.sh to tear down the {ticket} worktree."""
