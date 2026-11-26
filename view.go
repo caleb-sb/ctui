@@ -87,6 +87,9 @@ func (m *model) View() string {
 	// details is fixed, and the preview gets the rest
 	const detailsH = 5
 	listBody := min(max(1, len(m.rows)), max(1, avail/3-2))
+	if m.mode == mReview {
+		listBody = min(max(1, len(m.repos)), max(1, avail/3-2))
+	}
 	listH := listBody + 2
 	previewH := avail - listH - detailsH
 	if previewH < 3 {
@@ -114,9 +117,13 @@ func (m *model) View() string {
 		list = append(list, m.rowLine(m.rows[i], i == m.cur, inner, typeW, ticketW))
 	}
 	out := []string{panel(stTitle.Render("ctui")+stDim.Render("  "+tildify(m.cfg.Root)), m.counts(), list, w, listH)}
+	r, ok := m.selected()
+	if m.mode == mReview {
+		r, ok = m.reviewRow()
+		out = []string{m.pickerPanel(r, w, listH)}
+	}
 
 	// ── details ──
-	r, ok := m.selected()
 	if ok {
 		title := r.Ticket
 		if r.WT != nil {
@@ -178,6 +185,52 @@ func (m *model) rowLine(r row, sel bool, inner, typeW, ticketW int) string {
 		line += plain.Render(strings.Repeat(" ", pad))
 	}
 	return line
+}
+
+// pickerPanel is the review picker: the submodules checked out in the ticket's worktree.
+func (m *model) pickerPanel(r row, w, h int) string {
+	inner := w - 4
+	nameW, branchW, sumW := 0, 0, 0
+	for _, ri := range m.repos {
+		nameW, branchW, sumW = max(nameW, len(ri.Name)), max(branchW, len(ri.Branch)), max(sumW, len(ri.summary()))
+	}
+	var body []string
+	start := max(0, m.repoCur-(h-3))
+	for i := start; i < len(m.repos); i++ {
+		ri, sel := m.repos[i], i == m.repoCur
+		bg := func(s lipgloss.Style) lipgloss.Style {
+			if sel {
+				return s.Background(cSelBg)
+			}
+			return s
+		}
+		plain := bg(lipgloss.NewStyle())
+		bar := " "
+		if sel {
+			bar = bg(stTitle).Render("▌")
+		}
+		sumSt := stLabel
+		if ri.summary() == "no changes" {
+			sumSt = stFaint
+		}
+		line := bar + plain.Render(" ") + bg(lipgloss.NewStyle().Bold(true)).Render(fmt.Sprintf("%-*s", nameW, ri.Name)) +
+			plain.Render("  ") + bg(stDim).Render(fmt.Sprintf("%-*s", branchW, ri.Branch)) +
+			plain.Render("  ") + bg(sumSt).Render(fmt.Sprintf("%-*s", sumW, ri.summary()))
+		if pad := inner - ansi.StringWidth(line); pad > 0 {
+			line += plain.Render(strings.Repeat(" ", pad))
+		}
+		body = append(body, line)
+	}
+	title := stTitle.Render("review")
+	if r.Type != "" {
+		title += "  " + typeStyle(r).Bold(true).Render(strings.ToUpper(r.Type))
+	}
+	title += " " + lipgloss.NewStyle().Bold(true).Render(m.reviewTicket)
+	right := ""
+	if r.hasStage() {
+		right = m.pipeline(r, func(s lipgloss.Style) lipgloss.Style { return s }, max(10, w/2))
+	}
+	return panel(title, right, body, w, h)
 }
 
 func typeColour(r row) lipgloss.Color {
@@ -335,13 +388,20 @@ func (m *model) footer() string {
 	case mConfirm:
 		return " " + stDone.Render(m.confirmQ)
 	}
-	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
+	if m.flash != "" && time.Since(m.flashAt) < 6*time.Second {
 		if m.flashOK {
 			return " " + stOK.Render(m.flash)
 		}
 		return " " + stErr.Render(m.flash)
 	}
-	keys := [][2]string{{"j/k", "move"}, {"enter", "open"}, {"n", "new"}, {"i", "reply"}, {"f", "finish"}, {"x", "kill"}, {"?", "help"}, {"q", "quit"}}
+	keys := [][2]string{{"j/k", "move"}, {"enter", "open"}, {"n", "new"}, {"i", "reply"}, {"d", "review"}, {"f", "finish"}, {"x", "kill"}, {"?", "help"}, {"q", "quit"}}
+	if m.mode == mReview {
+		keys = [][2]string{{"enter", "review in tuicr"}}
+		if r, ok := m.reviewRow(); ok && r.atGate() {
+			keys = append(keys, [2]string{"a", "approve"})
+		}
+		keys = append(keys, [2]string{"l", "open session"}, [2]string{"esc", "back"})
+	}
 	var parts []string
 	for _, k := range keys {
 		parts = append(parts, stKey.Render(k[0])+" "+stDim.Render(k[1]))
@@ -356,7 +416,8 @@ func (m *model) helpView() string {
 		{"enter, l", "open the session (resumes the conversation if Claude isn't running)"},
 		{"n", "new session: type a ticket (5170 or PROJ-5170)"},
 		{"i", "send a reply to the selected session without switching to it"},
-		{"f", "send the finish prompt (check it's pushed, then finish-feature.sh)"},
+		{"d", "review: pick a submodule and comment on its diff in tuicr; exporting (y) sends the comments"},
+		{"f", "send the finish prompt (check it's pushed, then finish-feature)"},
 		{"x", "kill the Claude window (keeps the worktree)"},
 		{"r", "refresh now"},
 		{"q", "quit (esc also quits in --popup mode)"},

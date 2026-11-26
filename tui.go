@@ -58,6 +58,7 @@ const (
 	mReply
 	mConfirm
 	mHelp
+	mReview // the review picker
 )
 
 type tickMsg time.Time
@@ -78,7 +79,11 @@ type model struct {
 
 	preview string
 
-	mode      mode
+	mode         mode
+	reviewTicket string
+	repos        []repoInfo
+	repoCur      int
+
 	input     textinput.Model
 	confirmQ  string
 	confirmFn func() tea.Cmd
@@ -359,6 +364,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh(false)
 		}
 		return m, m.tick()
+	case tuicrDoneMsg:
+		m.tuicrDone(msg)
+		return m, nil
 	case tea.KeyMsg:
 		switch m.mode {
 		case mNew, mReply:
@@ -373,6 +381,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case mHelp:
 			m.mode = mNormal
 			return m, nil
+		case mReview:
+			return m, m.updateReview(msg)
 		}
 		return m, m.updateNormal(msg)
 	}
@@ -465,6 +475,10 @@ func (m *model) updateNormal(msg tea.KeyMsg) tea.Cmd {
 			m.say(false, "%s is showing a prompt; open it to answer first", r.Ticket)
 		default:
 			m.confirm(fmt.Sprintf("Send the finish prompt to %s? [y/N]", r.Ticket), func() tea.Cmd { m.finish(r); return nil })
+		}
+	case "d":
+		if ok {
+			m.startReview(r)
 		}
 	case "x":
 		if ok && r.alive() {

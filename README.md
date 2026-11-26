@@ -17,7 +17,7 @@ A tmux dashboard for running one Claude Code session per ticket against a git su
 ╭─ session ───────────────────────────────────────────────────────────────────────────────────────────╮
 │ (live view of the selected session's screen)                                                        │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────╯
- j/k move  ·  enter open  ·  n new  ·  i reply  ·  f finish  ·  x kill  ·  ? help
+ j/k move  ·  enter open  ·  n new  ·  i reply  ·  d review  ·  f finish  ·  x kill  ·  ? help
 ```
 
 The top panel lists tickets with their status icon, work type and stage pipeline. The middle panel
@@ -52,6 +52,36 @@ The pulse uses 24-bit colour. Inside tmux, ctui always sends it and tmux convert
 can't show it. Tell tmux your terminal can, for example `set -ag terminal-overrides ",xterm-256color:RGB"`,
 or the fade looks stepped.
 
+## Reviewing diffs
+
+`d` opens the review picker for the selected ticket. It replaces the ticket list with the submodules
+checked out in the ticket's worktree, each with its branch and how much has changed:
+
+```
+╭─ review  FEAT PROJ-5175 ──────────────────────── … › spec › [ tests ◆ ] › implement › checks › mr › … ─╮
+│ ▌ web-app      PROJ-5175-sso-login  2 commits                                                          │
+│   billing-api  PROJ-5175-sso-login  1 commit · 2 files dirty                                           │
+│   shared-lib   (detached)           no changes                                                         │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ enter review in tuicr  ·  a approve  ·  l open session  ·  esc back
+```
+
+- `enter` runs [tuicr](https://github.com/agavra/tuicr) in that submodule. Pick the commits to review
+  in its selector, comment on lines or ranges, then press `y` to export. The comments go straight to the
+  ticket's Claude session (wrapped in `review_prompt`) and are cleared in tuicr so they aren't sent twice.
+- Quitting tuicr without exporting (`:q`) sends nothing and changes nothing. The comments stay in tuicr
+  for next time.
+- `a` sends `approve_prompt` ("Approved, carry on.") and is only available while the ticket is waiting
+  for your approval (◆).
+- `l` opens the session, if you'd rather write to Claude yourself.
+- To copy code from tuicr without sending anything, select it in visual mode (`V`, then `j`/`k`) and
+  press `y`: with a selection, `y` copies it to the clipboard instead of exporting.
+
+Comments aren't sent while the session is showing a prompt or Claude isn't running; they stay in tuicr
+and you can export them again later. tuicr is a separate install (`tuicr_cmd` sets its path). Its own
+settings live in tuicr's config; `code_context = true` there puts the code each comment is about in the
+export, which helps Claude.
+
 ## Install
 
 Download the binary for your platform from the
@@ -71,7 +101,7 @@ mkdir -p ~/.config/ctui && curl -fL -o ~/.config/ctui/config.toml \
 The binaries aren't notarized. On macOS a file downloaded with `curl` runs as-is. If you download it
 in a browser, clear the quarantine flag first: `xattr -d com.apple.quarantine ~/.local/bin/ctui`.
 
-Requires tmux (3.0+) and Claude Code. To build from source (Go 1.27+):
+Requires tmux (3.0+) and Claude Code, plus [tuicr](https://github.com/agavra/tuicr) for reviewing diffs. To build from source (Go 1.27+):
 `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o ctui .`
 
 ## Use
@@ -94,6 +124,7 @@ bind-key C-d run-shell "tmux select-window -t '=claude:dash' && tmux switch-clie
 | `enter`/`l` | open the session. If Claude isn't running, it resumes the ticket's last conversation. |
 | `n` | new session. Type `5170` or `PROJ-5170` and Claude starts in `main/` with `start_prompt`. |
 | `i` | send a reply without switching (blocked while a prompt is showing) |
+| `d` | review the worktree's submodules in tuicr (see above) |
 | `f` | send `finish_prompt` (Claude checks it's pushed, then runs `finish-feature`) |
 | `x` | kill the Claude window (keeps the worktree) |
 | `r`, `?`, `q` | refresh, help, quit (`esc` also quits in popup mode) |

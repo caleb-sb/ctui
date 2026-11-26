@@ -25,6 +25,19 @@ finish_prompt = """We're wrapping up {ticket}. Check that everything in the {tic
 and tell me if anything isn't. If it's all clean, run {ctui} stage {ticket} finish, then use scripts/finish-feature \
 to tear down the {ticket} worktree."""
 
+# Reviewing diffs (`d`): ctui lists the submodules checked out in the ticket's worktree and runs
+# tuicr (https://github.com/agavra/tuicr) in the one you pick. Exporting your comments there (y) sends
+# them to the ticket's Claude session, wrapped in review_prompt, and clears them in tuicr.
+# Quitting without exporting (:q) sends nothing. review_prompt also takes {repo} (the submodule's
+# name), {repo_path} (its path) and {comments} (what tuicr exported).
+tuicr_cmd = "tuicr"
+review_prompt = """My review comments on {repo} in the {ticket} worktree. File paths are relative to {repo_path}.
+
+{comments}"""
+
+# Sent by `a` in the review picker, while the ticket is waiting for your approval.
+approve_prompt = "Approved, carry on."
+
 # Kinds of work. Claude picks one with `ctui type`, which prints the stages and the instructions,
 # and reports each stage with `ctui stage`. Jumping ahead marks the stages in between as skipped.
 # "approve" is a stage where the work waits for your approval of the stage before it; the dashboard

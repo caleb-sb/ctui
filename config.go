@@ -19,6 +19,10 @@ type Config struct {
 	StartPrompt  string   `toml:"start_prompt"`  // first prompt for a new ticket
 	FinishPrompt string   `toml:"finish_prompt"` // sent by `f`
 
+	TuicrCmd      string `toml:"tuicr_cmd"`      // tuicr binary, for reviewing diffs (`d`)
+	ReviewPrompt  string `toml:"review_prompt"`  // wraps the comments exported from tuicr
+	ApprovePrompt string `toml:"approve_prompt"` // sent by `a` in the review picker
+
 	Types map[string]WorkType `toml:"types"` // kinds of work, keyed by name (bug, feat, review)
 }
 
@@ -31,16 +35,25 @@ const defaultFinishPrompt = `We're wrapping up {ticket}. Check that everything i
 	`and tell me if anything isn't. If it's all clean, run {ctui} stage {ticket} finish, then use scripts/finish-feature ` +
 	`to tear down the {ticket} worktree.`
 
+const defaultReviewPrompt = `My review comments on {repo} in the {ticket} worktree. File paths are relative to {repo_path}.
+
+{comments}`
+
+const defaultApprovePrompt = `Approved, carry on.`
+
 func defaultConfig() Config {
 	return Config{
-		Root:         "~/project",
-		Main:         "main",
-		TmuxSession:  "claude",
-		ClaudeCmd:    "claude",
-		TicketPrefix: "PROJ",
-		StartPrompt:  defaultStartPrompt,
-		FinishPrompt: defaultFinishPrompt,
-		Types:        defaultTypes(),
+		Root:          "~/project",
+		Main:          "main",
+		TmuxSession:   "claude",
+		ClaudeCmd:     "claude",
+		TicketPrefix:  "PROJ",
+		StartPrompt:   defaultStartPrompt,
+		FinishPrompt:  defaultFinishPrompt,
+		TuicrCmd:      "tuicr",
+		ReviewPrompt:  defaultReviewPrompt,
+		ApprovePrompt: defaultApprovePrompt,
+		Types:         defaultTypes(),
 	}
 }
 
