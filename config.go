@@ -18,15 +18,18 @@ type Config struct {
 	TicketPrefix string   `toml:"ticket_prefix"` // typing "5170" becomes "PROJ-5170"
 	StartPrompt  string   `toml:"start_prompt"`  // first prompt for a new ticket
 	FinishPrompt string   `toml:"finish_prompt"` // sent by `f`
+
+	Types map[string]WorkType `toml:"types"` // kinds of work, keyed by name (bug, feat, review)
 }
 
 const defaultStartPrompt = `We're starting work on {ticket}. Read context.md, then fetch {ticket} from Jira. ` +
 	`Once you've read it, run {ctui} blurb {ticket} "<one-line summary of the ticket, under 60 characters>" so it shows on my dashboard. ` +
-	`Decide which submodules the change touches and use scripts/new-feature.sh to create the {ticket} worktree ` +
-	`with those submodules checked out. Then summarize the ticket and your plan, and wait for my go-ahead before changing code.`
+	`Then decide what kind of work it is and run {ctui} type {ticket} <{types}>. ` +
+	`It prints the stages of that work and what to do next. Follow it.`
 
 const defaultFinishPrompt = `We're wrapping up {ticket}. Check that everything in the {ticket} worktree is committed and pushed ` +
-	`and tell me if anything isn't. If it's all clean, run scripts/finish-feature.sh to tear down the {ticket} worktree.`
+	`and tell me if anything isn't. If it's all clean, run {ctui} stage {ticket} finish, then use scripts/finish-feature ` +
+	`to tear down the {ticket} worktree.`
 
 func defaultConfig() Config {
 	return Config{
@@ -37,6 +40,7 @@ func defaultConfig() Config {
 		TicketPrefix: "PROJ",
 		StartPrompt:  defaultStartPrompt,
 		FinishPrompt: defaultFinishPrompt,
+		Types:        defaultTypes(),
 	}
 }
 
@@ -53,6 +57,7 @@ func configPath() string {
 
 func loadConfig() (Config, error) {
 	c := defaultConfig()
+	// A [types.X] table in the file replaces the default type X; other defaults stay.
 	if _, err := toml.DecodeFile(configPath(), &c); err != nil && !os.IsNotExist(err) {
 		return c, fmt.Errorf("config %s: %w", configPath(), err)
 	}
@@ -63,11 +68,19 @@ func loadConfig() (Config, error) {
 func (c Config) MainDir() string { return filepath.Join(c.Root, c.Main) }
 
 func (c Config) Prompt(tmpl, ticket string) string {
+	// {worktree} is the ticket's actual worktree (root/<TICKET>-<slug>) once it exists.
+	worktree := filepath.Join(c.Root, ticket)
+	if strings.Contains(tmpl, "{worktree}") {
+		if wt, ok := listWorktrees(c)[ticket]; ok {
+			worktree = wt.Path
+		}
+	}
 	r := strings.NewReplacer(
 		"{ticket}", ticket,
-		"{worktree}", filepath.Join(c.Root, ticket),
+		"{worktree}", worktree,
 		"{root}", c.Root,
 		"{ctui}", shellQuote(selfPath()),
+		"{types}", strings.Join(c.typeNames(), "|"),
 	)
 	return r.Replace(tmpl)
 }

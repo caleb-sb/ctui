@@ -29,6 +29,10 @@ type State struct {
 	SessionID string    `json:"session_id"`
 	Pane      string    `json:"pane"`
 	Argv      []string  `json:"argv"` // what _exec should run
+
+	Type    string `json:"type,omitempty"`    // work type, set by Claude through `ctui type`
+	Stage   int    `json:"stage"`             // index into the type's stages, set through `ctui stage`
+	Skipped []int  `json:"skipped,omitempty"` // stage indexes that were jumped over
 }
 
 func stateDir() string {

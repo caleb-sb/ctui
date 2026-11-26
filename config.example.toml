@@ -13,12 +13,36 @@ claude_args = []            # e.g. ["--model", "opus"]
 # Typing "5170" in the new-session prompt becomes "PROJ-5170".
 ticket_prefix = "PROJ"
 
-# Placeholders: {ticket}, {worktree} (root/ticket), {root}, {ctui} (path to this binary).
+# Placeholders: {ticket}, {worktree} (the ticket's worktree, root/<TICKET>-<slug>), {root},
+# {ctui} (path to this binary), {types} (the work type names, e.g. bug|feat|review).
 # Claude always starts in root/main.
 start_prompt = """We're starting work on {ticket}. Read context.md, then fetch {ticket} from Jira. \
 Once you've read it, run {ctui} blurb {ticket} "<one-line summary of the ticket, under 60 characters>" so it shows on my dashboard. \
-Decide which submodules the change touches and use scripts/new-feature.sh to create the {ticket} worktree \
-with those submodules checked out. Then summarize the ticket and your plan, and wait for my go-ahead before changing code."""
+Then decide what kind of work it is and run {ctui} type {ticket} <{types}>. \
+It prints the stages of that work and what to do next. Follow it."""
 
 finish_prompt = """We're wrapping up {ticket}. Check that everything in the {ticket} worktree is committed and pushed \
-and tell me if anything isn't. If it's all clean, run scripts/finish-feature.sh to tear down the {ticket} worktree."""
+and tell me if anything isn't. If it's all clean, run {ctui} stage {ticket} finish, then use scripts/finish-feature \
+to tear down the {ticket} worktree."""
+
+# Kinds of work. Claude picks one with `ctui type`, which prints the stages and the instructions,
+# and reports each stage with `ctui stage`. Jumping ahead marks the stages in between as skipped.
+# "approve" is a stage where the work waits for your approval of the stage before it; the dashboard
+# shows it as "[ implement ◆ ]". Defining [types.X] replaces the default X; you can add new types.
+[types.feat]
+colour = "#5fafff"
+stages = ["start", "investigate", "spec", "approve", "tests", "approve", "implement", "approve", "checks", "mr", "demo", "finish"]
+instructions = """Use scripts/start-feature to create the {ticket} worktree with the submodules the change touches. \
+Investigate the issue, then write a TDD implementation spec and wait for my approval. \
+Write the tests first and show me they fail, and wait for my approval. Then implement, \
+show the tests pass and wait for my approval. Then run the checks, open the MR and make the demo."""
+
+[types.bug]
+colour = "#ff875f"
+stages = ["start", "repro", "verify", "spec", "approve", "tests", "approve", "fix", "approve", "checks", "mr", "demo", "finish"]
+instructions = "Use the fix-bug skill for {ticket}."
+
+[types.review]
+colour = "#d787d7"
+stages = ["start", "plan", "review", "finish"]
+instructions = "Use the review-mr skill for {ticket}."

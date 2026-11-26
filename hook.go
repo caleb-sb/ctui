@@ -25,6 +25,7 @@ type hookPayload struct {
 	Message          string          `json:"message"`
 	NotificationType string          `json:"notification_type"`
 	LastAssistant    string          `json:"last_assistant_message"`
+	Source           string          `json:"source"` // SessionStart: startup, resume, clear, compact
 }
 
 // writeHooksFile writes the settings JSON passed to `claude --settings`.
@@ -46,8 +47,10 @@ func writeHooksFile() (string, error) {
 	}
 	settings := map[string]any{
 		"hooks": hooks,
-		// Let Claude set the dashboard blurb without a permission prompt. This only applies to ctui-launched sessions.
-		"permissions": map[string]any{"allow": []string{"Bash(" + exe + " blurb:*)"}},
+		// Let Claude set the blurb, type and stage without a permission prompt. This only applies to ctui-launched sessions.
+		"permissions": map[string]any{"allow": []string{
+			"Bash(" + exe + " blurb:*)", "Bash(" + exe + " type:*)", "Bash(" + exe + " stage:*)",
+		}},
 	}
 	b, _ := json.MarshalIndent(settings, "", "  ")
 	path := filepath.Join(stateDir(), "hooks.json")
@@ -58,8 +61,8 @@ func writeHooksFile() (string, error) {
 	return path, os.WriteFile(path, b, 0o644)
 }
 
-// runHook is the `ctui hook` subcommand. It must print nothing (stdout from some
-// hooks becomes Claude context) and must never fail in a way that blocks Claude.
+// runHook is the `ctui hook` subcommand. Stdout from some hooks becomes Claude context, so it
+// prints nothing except the stage reminder on SessionStart. It must never fail in a way that blocks Claude.
 func runHook() {
 	defer func() { _ = recover() }()
 	ticket := os.Getenv("CTUI_TICKET")
@@ -162,6 +165,25 @@ func runHook() {
 	if pane != "" && state != "" {
 		_, _ = tmux("set-option", "-w", "-t", pane, "@ctui_state", state)
 	}
+	if p.Event == "SessionStart" {
+		printStageReminder(ticket)
+	}
+}
+
+// printStageReminder tells a session that already has a work type (after /clear, a resume or a
+// compaction) to keep reporting stages. SessionStart hook stdout is added to Claude's context.
+func printStageReminder(ticket string) {
+	st := readState(ticket)
+	cfg, err := loadConfig()
+	if err != nil || st.Type == "" {
+		return
+	}
+	wt, ok := cfg.workType(st.Type)
+	if !ok {
+		return
+	}
+	fmt.Printf("This session is working on %s, which is %s work, and reports its progress to the ctui dashboard.\n%s\n",
+		ticket, strings.ToUpper(st.Type), cfg.stageGuide(ticket, wt, st.Stage))
 }
 
 func toolSummary(tool string, raw json.RawMessage) string {

@@ -11,6 +11,8 @@ const usage = `usage:
   ctui            open the dashboard (attaches the tmux session if you're outside tmux)
   ctui --popup    run the TUI once, e.g. from tmux display-popup; quits after you open a session
   ctui blurb TICKET TEXT   set the one-line ticket summary shown on the dashboard
+  ctui type TICKET TYPE    set the kind of work (e.g. bug, feat, review) and print its stages
+  ctui stage TICKET STAGE  set the stage the work is at
   ctui hook       Claude Code hook handler (installed automatically through --settings)
 `
 
@@ -25,6 +27,10 @@ func main() {
 		return
 	case "blurb":
 		os.Exit(runBlurb(os.Args[2:]))
+	case "type":
+		os.Exit(runType(os.Args[2:]))
+	case "stage":
+		os.Exit(runStage(os.Args[2:]))
 	case "_exec":
 		if len(os.Args) < 3 {
 			os.Exit(2)

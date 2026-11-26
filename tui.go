@@ -9,6 +9,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // Display statuses (derived from the stored State plus tmux).
@@ -33,9 +35,20 @@ type row struct {
 	St     State
 	Pane   *Pane
 	WT     *Worktree
+	Type   string    // work type: from `ctui type`, or "review" from the worktree's git config
+	Work   *WorkType // nil if the type isn't known
 }
 
 func (r row) alive() bool { return r.Pane != nil && !r.Pane.Dead }
+
+// hasStage reports whether the row knows which of its type's stages it's at.
+// A review tree detected from git config has a type but no stage.
+func (r row) hasStage() bool {
+	return r.Work != nil && r.St.Type != "" && r.St.Stage >= 0 && r.St.Stage < len(r.Work.Stages)
+}
+
+// atGate reports whether the work is waiting for your approval of a stage.
+func (r row) atGate() bool { return r.hasStage() && r.Work.Stages[r.St.Stage] == approveStage }
 
 type mode int
 
@@ -58,8 +71,10 @@ type model struct {
 	offset int
 	wts    map[string]Worktree
 	lastWT time.Time
-	ticks  int
-	frame  int
+	lastRf time.Time
+	now    time.Time
+	frame  int  // spinner frame, from the clock
+	pulse  bool // a row is at an approval gate, so tick fast for a smooth pulse
 
 	preview string
 
@@ -78,17 +93,26 @@ type model struct {
 func runTUI(cfg Config, popup bool) error {
 	ti := textinput.New()
 	ti.CharLimit = 4000
-	m := &model{cfg: cfg, popup: popup, input: ti}
+	if inTmux() {
+		// tmux converts 24-bit colour for terminals that can't show it, so the pulse can
+		// always use it. lipgloss can't tell what's behind tmux.
+		lipgloss.SetColorProfile(termenv.TrueColor)
+	}
+	m := &model{cfg: cfg, popup: popup, input: ti, now: time.Now()}
 	m.refresh(true)
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(120*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+func (m *model) tick() tea.Cmd {
+	d := 120 * time.Millisecond
+	if m.pulse {
+		d = time.Second / 30
+	}
+	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func (m *model) Init() tea.Cmd { return tick() }
+func (m *model) Init() tea.Cmd { return m.tick() }
 
 // ---------- data ----------
 
@@ -120,6 +144,13 @@ func (m *model) refresh(worktreesToo bool) {
 		if wt, ok := m.wts[t]; ok {
 			r.WT = &wt
 		}
+		r.Type = r.St.Type
+		if r.Type == "" && r.WT != nil && r.WT.Review {
+			r.Type = "review"
+		}
+		if wt, ok := m.cfg.workType(r.Type); ok {
+			r.Work = &wt
+		}
 		r.Status = m.displayStatus(&r)
 		rows = append(rows, r)
 	}
@@ -130,6 +161,13 @@ func (m *model) refresh(worktreesToo bool) {
 		return rows[i].Ticket < rows[j].Ticket
 	})
 	m.rows = rows
+	m.pulse = false
+	for _, r := range rows {
+		if r.atGate() {
+			m.pulse = true
+		}
+	}
+	m.lastRf = time.Now()
 	m.cur = 0
 	for i, r := range rows {
 		if r.Ticket == selected {
@@ -315,12 +353,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.Width = max(10, m.w-20)
 		return m, nil
 	case tickMsg:
-		m.frame++
-		m.ticks++
-		if m.ticks%8 == 0 { // about once a second
+		m.now = time.Time(msg)
+		m.frame = int(m.now.UnixMilli() / 100)
+		if m.now.Sub(m.lastRf) >= time.Second {
 			m.refresh(false)
 		}
-		return m, tick()
+		return m, m.tick()
 	case tea.KeyMsg:
 		switch m.mode {
 		case mNew, mReply:

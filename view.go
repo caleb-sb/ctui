@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
 func fg(c string) lipgloss.Style { return lipgloss.NewStyle().Foreground(lipgloss.Color(c)) }
@@ -22,6 +25,8 @@ var (
 	stFaint   = fg("239")
 	stLabel   = fg("245")
 	stBorder  = fg("240")
+	stFuture  = fg("240")
+	pulseBg   = "#262626" // what the approval diamond fades towards
 	stTitle   = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
 	stKey     = lipgloss.NewStyle().Foreground(cAccent)
 	stErr     = fg("203")
@@ -101,15 +106,27 @@ func (m *model) View() string {
 	if len(m.rows) == 0 {
 		list = append(list, stDim.Render("no sessions or worktrees yet. Press ")+stKey.Render("n")+stDim.Render(" to start one."))
 	}
+	typeW, ticketW := 0, 0
+	for _, r := range m.rows {
+		typeW, ticketW = max(typeW, len(r.Type)), max(ticketW, len(r.Ticket))
+	}
 	for i := m.offset; i < min(len(m.rows), m.offset+listBody); i++ {
-		list = append(list, m.rowLine(m.rows[i], i == m.cur, inner))
+		list = append(list, m.rowLine(m.rows[i], i == m.cur, inner, typeW, ticketW))
 	}
 	out := []string{panel(stTitle.Render("ctui")+stDim.Render("  "+tildify(m.cfg.Root)), m.counts(), list, w, listH)}
 
 	// ── details ──
 	r, ok := m.selected()
 	if ok {
-		out = append(out, panel(stTitle.Render(r.Ticket), "", m.details(r), w, detailsH))
+		title := r.Ticket
+		if r.WT != nil {
+			title = filepath.Base(r.WT.Path)
+		}
+		right := ""
+		if r.Type != "" {
+			right = typeStyle(r).Bold(true).Render(strings.ToUpper(r.Type))
+		}
+		out = append(out, panel(stTitle.Render(title), right, m.details(r), w, detailsH))
 	} else {
 		out = append(out, panel(stDim.Render("details"), "", nil, w, detailsH))
 	}
@@ -134,25 +151,113 @@ func (m *model) View() string {
 	return strings.Join(out, "\n") + "\n" + m.footer()
 }
 
-// rowLine renders a list entry: selection bar, status icon, ticket.
-func (m *model) rowLine(r row, sel bool, inner int) string {
+// rowLine renders a list entry: selection bar, status icon, work type, ticket, stage pipeline.
+// typeW and ticketW are the column widths, so the pipelines line up.
+func (m *model) rowLine(r row, sel bool, inner, typeW, ticketW int) string {
 	bg := func(s lipgloss.Style) lipgloss.Style {
 		if sel {
 			return s.Background(cSelBg)
 		}
 		return s
 	}
+	plain := bg(lipgloss.NewStyle())
 	icon, ist := m.icon(r.Status)
 	bar := " "
 	if sel {
 		bar = bg(stTitle).Render("▌")
 	}
-	name := bg(lipgloss.NewStyle().Bold(sel)).Render(r.Ticket)
-	line := bar + bg(lipgloss.NewStyle()).Render(" ") + bg(ist).Render(icon) + bg(lipgloss.NewStyle()).Render(" ") + name
+	line := bar + plain.Render(" ") + bg(ist).Render(icon) + plain.Render(" ")
+	if typeW > 0 {
+		line += bg(typeStyle(r).Bold(true)).Render(fmt.Sprintf("%-*s", typeW, strings.ToUpper(r.Type))) + plain.Render(" ")
+	}
+	line += bg(lipgloss.NewStyle().Bold(sel)).Render(fmt.Sprintf("%-*s", ticketW, r.Ticket))
+	if r.hasStage() {
+		line += plain.Render("  ") + m.pipeline(r, bg, inner-ansi.StringWidth(line)-2)
+	}
 	if pad := inner - ansi.StringWidth(line); pad > 0 {
-		line += bg(lipgloss.NewStyle()).Render(strings.Repeat(" ", pad))
+		line += plain.Render(strings.Repeat(" ", pad))
 	}
 	return line
+}
+
+func typeColour(r row) lipgloss.Color {
+	if r.Work != nil && r.Work.Colour != "" {
+		return lipgloss.Color(r.Work.Colour)
+	}
+	return cAccent
+}
+
+func typeStyle(r row) lipgloss.Style { return lipgloss.NewStyle().Foreground(typeColour(r)) }
+
+// pipeline renders the row's stages as "done › [ current ] › upcoming". Approval stages fold
+// into the stage they approve: "[ implement ◆ ]" while waiting for your approval of it.
+// If it doesn't fit, finished stages drop off the front, then upcoming ones off the end.
+func (m *model) pipeline(r row, bg func(lipgloss.Style) lipgloss.Style, max int) string {
+	st, cur := r.Work.Stages, r.St.Stage
+	skipped := map[int]bool{}
+	for _, i := range r.St.Skipped {
+		skipped[i] = true
+	}
+	col := typeStyle(r)
+	var parts []string
+	curPart := 0
+	for i, s := range st {
+		if s == approveStage {
+			continue
+		}
+		gate := i+1 < len(st) && st[i+1] == approveStage && i+1 == cur
+		switch {
+		case i == cur || gate:
+			t := bg(col.Bold(true)).Render("[ " + s)
+			if gate {
+				t += bg(lipgloss.NewStyle()).Render(" ") + bg(m.diamond(r)).Render("◆")
+			}
+			parts = append(parts, t+bg(col.Bold(true)).Render(" ]"))
+			curPart = len(parts) - 1
+		case skipped[i]:
+			parts = append(parts, bg(stFaint.Strikethrough(true)).Render(s))
+		case i < cur:
+			parts = append(parts, bg(col.Faint(true)).Render(s))
+		default:
+			parts = append(parts, bg(stFuture).Render(s))
+		}
+	}
+	sep, ell := bg(stFaint).Render(" › "), bg(stFaint).Render("…")
+	lo, hi := 0, len(parts)-1
+	for {
+		var shown []string
+		if lo > 0 {
+			shown = append(shown, ell)
+		}
+		shown = append(shown, parts[lo:hi+1]...)
+		if hi < len(parts)-1 {
+			shown = append(shown, ell)
+		}
+		out := strings.Join(shown, sep)
+		switch {
+		case ansi.StringWidth(out) <= max:
+			return out
+		case lo < curPart-1:
+			lo++
+		case hi > curPart+1:
+			hi--
+		default:
+			return ansi.Truncate(out, max, "…")
+		}
+	}
+}
+
+// diamond is the approval marker. Its colour eases from the type colour towards the
+// background and back, so it pulses gently while the work waits for you.
+func (m *model) diamond(r row) lipgloss.Style {
+	const period, depth = 1.6, 0.7 // seconds per pulse; how far it fades (1 = all the way)
+	k := 0.5 - 0.5*math.Cos(2*math.Pi*float64(m.now.UnixMilli())/1000/period)
+	c, err := colorful.Hex(string(typeColour(r)))
+	if err != nil {
+		return typeStyle(r).Bold(true)
+	}
+	bg, _ := colorful.Hex(pulseBg)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(c.BlendLab(bg, k*depth).Clamped().Hex())).Bold(true)
 }
 
 func (m *model) details(r row) []string {
@@ -169,14 +274,18 @@ func (m *model) details(r row) []string {
 		} else {
 			repos = stDim.Render("none checked out")
 		}
-		where = r.WT.Branch + stFaint.Render("  ·  ") + stDim.Render(tildify(r.WT.Path))
+		where = stDim.Render(tildify(r.WT.Path))
+		// worktree dirs are named after their branch; only show the branch if it differs
+		if r.WT.Branch != filepath.Base(r.WT.Path) {
+			where += stFaint.Render("  ·  ") + r.WT.Branch
+		}
 	case r.alive():
 		where = stDim.Italic(true).Render("setting up…")
 	}
 	return []string{
 		blurb,
 		label("repos") + repos,
-		label("branch") + where,
+		label("worktree") + where,
 	}
 }
 
@@ -259,6 +368,7 @@ func (m *model) helpView() string {
 		{"○", "idle", "waiting for your next prompt"},
 		{"◌", "idle?", "hooks say working, but nothing is running on screen (Esc?)"},
 		{"·", "no claude", "worktree exists, Claude isn't running"},
+		{"◆", "approval", "[ implement ◆ ]: the work is waiting for you to approve that stage"},
 	}
 	var lines []string
 	for _, k := range keys {
@@ -276,10 +386,13 @@ func (m *model) helpView() string {
 			st = stWorking
 		case "◌", "·":
 			st = stDim
+		case "◆":
+			st = stTitle
 		}
 		lines = append(lines, st.Render(ic[0])+"  "+st.Render(fmt.Sprintf("%-10s", ic[1]))+stDim.Render(ic[2]))
 	}
-	lines = append(lines, "", stDim.Render("press any key"))
+	lines = append(lines, "", stDim.Render("Pipelines: dim stages are done, [ bracketed ] is current, struck-through were skipped."),
+		"", stDim.Render("press any key"))
 	w := min(m.w, 90)
 	return panel(stTitle.Render("help"), "", lines, w, min(m.h, len(lines)+2))
 }
