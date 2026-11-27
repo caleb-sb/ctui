@@ -22,13 +22,19 @@ func TestExampleConfigMatchesDefaults(t *testing.T) {
 
 func TestNormalizeTicket(t *testing.T) {
 	c := defaultConfig()
-	for in, want := range map[string]string{"5170": "PROJ-5170", "proj-5170": "PROJ-5170", " PROJ-1 ": "PROJ-1"} {
+	for in, want := range map[string]string{
+		"5170": "PROJ-5170", "proj-5170": "PROJ-5170", " PROJ-1 ": "PROJ-1",
+		"Login-Mockups": "login-mockups", "docs_site": "docs_site",
+	} {
 		if got, err := c.NormalizeTicket(in); err != nil || got != want {
 			t.Errorf("NormalizeTicket(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
 	if _, err := c.NormalizeTicket("PROJ 5170; rm -rf"); err == nil {
 		t.Error("expected error for unsafe ticket")
+	}
+	if _, err := c.NormalizeTicket("v2-1-docs"); err == nil {
+		t.Error("expected error for a name that starts like a ticket")
 	}
 }
 
@@ -39,7 +45,8 @@ func TestTicketFromDir(t *testing.T) {
 		"proj-12-x":              "PROJ-12",
 		"AB_C-7-a-b-9":           "AB_C-7",
 		"scratch":                "scratch",
-		"PROJ-x":                 "PROJ-x",
+		"PROJ-x":                 "proj-x",
+		"Login-Mockups":          "login-mockups",
 	} {
 		if got := ticketFromDir(in); got != want {
 			t.Errorf("ticketFromDir(%q) = %q, want %q", in, got, want)
@@ -94,5 +101,19 @@ func TestTypeOverride(t *testing.T) {
 	}
 	if _, ok := c.workType("spike"); !ok {
 		t.Error("new type should be added")
+	}
+}
+
+func TestStagelessType(t *testing.T) {
+	t.Setenv("CTUI_CONFIG", t.TempDir()+"/none.toml")
+	t.Setenv("CTUI_STATE_DIR", t.TempDir())
+	if code := runType([]string{"login-mockups", "explore"}); code != 0 {
+		t.Fatalf("ctui type explore exited %d", code)
+	}
+	if code := runStage([]string{"login-mockups", "finish"}); code != 0 {
+		t.Errorf("ctui stage on a stageless type exited %d, want 0", code)
+	}
+	if st := readState("login-mockups"); st.Type != "explore" || st.Stage != 0 {
+		t.Errorf("state = %+v", st)
 	}
 }

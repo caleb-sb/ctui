@@ -11,7 +11,8 @@ import (
 // does once it has picked the type.
 type WorkType struct {
 	Colour       string   `toml:"colour"`       // hex, e.g. "#ff875f"
-	Stages       []string `toml:"stages"`       // in order; "approve" means waiting for your approval of the stage before it
+	Label        string   `toml:"label"`        // shown on the dashboard instead of the name in capitals, e.g. "XPLR"
+	Stages       []string `toml:"stages"`       // in order; "approve" means waiting for your approval of the stage before it. Empty: no stages
 	Instructions string   `toml:"instructions"` // printed to Claude by `ctui type`; same placeholders as the prompts
 }
 
@@ -31,6 +32,17 @@ func defaultTypes() map[string]WorkType {
 			Colour:       "#ff875f",
 			Stages:       []string{"start", "repro", "verify", "spec", "approve", "tests", "approve", "fix", "approve", "checks", "mr", "demo", "finish"},
 			Instructions: `Use the fix-bug skill for {ticket}.`,
+		},
+		"explore": {
+			Colour: "#87d7af",
+			Label:  "XPLR",
+			Stages: []string{},
+			Instructions: `There's no fixed process and no stages to report. Once you know what we're exploring, run ` +
+				`{ctui} blurb {ticket} "<one-line summary, under 60 characters>" so it shows on my dashboard. ` +
+				`An exploration is usually design mockups, an experiment in the codebase, or documentation and diagrams ` +
+				`in documentation/ at the superrepo root (an Astro site). If it isn't clear which, or what I want, ask me. ` +
+				`Before you change any files, run scripts/start-feature --explore {ticket} [<submodule>...] with the ` +
+				`submodules you need. For work only in documentation/ at the superrepo root, give no submodules.`,
 		},
 		"review": {
 			Colour:       "#d787d7",
@@ -52,7 +64,7 @@ func (c Config) typeNames() []string {
 
 func (c Config) workType(name string) (WorkType, bool) {
 	t, ok := c.Types[strings.ToLower(name)]
-	return t, ok && len(t.Stages) > 0
+	return t, ok
 }
 
 // moveStage works out the new stage when Claude reports that it's entering stage name.
@@ -107,6 +119,9 @@ func uniq(xs []string) []string {
 
 // stageGuide is what Claude is told about reporting stages, by `ctui type` and after /clear.
 func (c Config) stageGuide(ticket string, wt WorkType, cur int) string {
+	if len(wt.Stages) == 0 {
+		return "This work has no stages to report."
+	}
 	ctui := shellQuote(selfPath())
 	at := ""
 	if cur >= 0 && cur < len(wt.Stages) {
@@ -174,11 +189,16 @@ func runStage(args []string) int {
 	}
 	name := strings.ToLower(strings.TrimSpace(args[1]))
 	var wt WorkType
+	var typ string
 	var moveErr error
 	st, err := updateState(ticket, func(s *State) {
 		var ok bool
 		if wt, ok = cfg.workType(s.Type); !ok {
 			moveErr = fmt.Errorf("%s has no work type yet; run ctui type %s %s first", ticket, ticket, strings.Join(cfg.typeNames(), "|"))
+			return
+		}
+		typ = s.Type
+		if len(wt.Stages) == 0 {
 			return
 		}
 		s.Stage, s.Skipped, moveErr = moveStage(wt.Stages, s.Stage, s.Skipped, name)
@@ -189,6 +209,11 @@ func runStage(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ctui:", err)
 		return 1
+	}
+	if len(wt.Stages) == 0 {
+		// Not an error, so prompts that report a stage (such as finish_prompt) work for every type.
+		fmt.Printf("%s is %s work, which has no stages; nothing to record.\n", ticket, strings.ToUpper(typ))
+		return 0
 	}
 	msg := fmt.Sprintf("%s stage: %s", ticket, wt.Stages[st.Stage])
 	if len(st.Skipped) > 0 {

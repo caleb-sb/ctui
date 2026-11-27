@@ -111,7 +111,7 @@ func (m *model) View() string {
 	}
 	typeW, ticketW := 0, 0
 	for _, r := range m.rows {
-		typeW, ticketW = max(typeW, len(r.Type)), max(ticketW, len(r.Ticket))
+		typeW, ticketW = max(typeW, len(typeLabel(r))), max(ticketW, len(r.Ticket))
 	}
 	for i := m.offset; i < min(len(m.rows), m.offset+listBody); i++ {
 		list = append(list, m.rowLine(m.rows[i], i == m.cur, inner, typeW, ticketW))
@@ -131,7 +131,7 @@ func (m *model) View() string {
 		}
 		right := ""
 		if r.Type != "" {
-			right = typeStyle(r).Bold(true).Render(strings.ToUpper(r.Type))
+			right = typeStyle(r).Bold(true).Render(typeLabel(r))
 		}
 		out = append(out, panel(stTitle.Render(title), right, m.details(r), w, detailsH))
 	} else {
@@ -175,7 +175,7 @@ func (m *model) rowLine(r row, sel bool, inner, typeW, ticketW int) string {
 	}
 	line := bar + plain.Render(" ") + bg(ist).Render(icon) + plain.Render(" ")
 	if typeW > 0 {
-		line += bg(typeStyle(r).Bold(true)).Render(fmt.Sprintf("%-*s", typeW, strings.ToUpper(r.Type))) + plain.Render(" ")
+		line += bg(typeStyle(r).Bold(true)).Render(fmt.Sprintf("%-*s", typeW, typeLabel(r))) + plain.Render(" ")
 	}
 	line += bg(lipgloss.NewStyle().Bold(sel)).Render(fmt.Sprintf("%-*s", ticketW, r.Ticket))
 	if r.hasStage() {
@@ -223,7 +223,7 @@ func (m *model) pickerPanel(r row, w, h int) string {
 	}
 	title := stTitle.Render("review")
 	if r.Type != "" {
-		title += "  " + typeStyle(r).Bold(true).Render(strings.ToUpper(r.Type))
+		title += "  " + typeStyle(r).Bold(true).Render(typeLabel(r))
 	}
 	title += " " + lipgloss.NewStyle().Bold(true).Render(m.reviewTicket)
 	right := ""
@@ -238,6 +238,14 @@ func typeColour(r row) lipgloss.Color {
 		return lipgloss.Color(r.Work.Colour)
 	}
 	return cAccent
+}
+
+// typeLabel is how the row's type is shown: its label if it has one (XPLR), else its name in capitals.
+func typeLabel(r row) string {
+	if r.Work != nil && r.Work.Label != "" {
+		return r.Work.Label
+	}
+	return strings.ToUpper(r.Type)
 }
 
 func typeStyle(r row) lipgloss.Style { return lipgloss.NewStyle().Foreground(typeColour(r)) }
@@ -414,7 +422,7 @@ func (m *model) helpView() string {
 		{"j / k", "move"},
 		{"g / G", "top / bottom"},
 		{"enter, l", "open the session (resumes the conversation if Claude isn't running)"},
-		{"n", "new session: type a ticket (5170 or PROJ-5170)"},
+		{"n", "new session: a ticket (5170 or PROJ-5170) or an exploration name, then optionally what it's about"},
 		{"i", "send a reply to the selected session without switching to it"},
 		{"d", "review: pick a submodule and comment on its diff in tuicr; exporting (y) sends the comments"},
 		{"f", "send the finish prompt (check it's pushed, then finish-feature)"},

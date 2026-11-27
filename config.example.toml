@@ -10,7 +10,8 @@ tmux_session = "claude"
 claude_cmd = "claude"
 claude_args = []            # e.g. ["--model", "opus"]
 
-# Typing "5170" in the new-session prompt becomes "PROJ-5170".
+# Typing "5170" in the new-session prompt becomes "PROJ-5170". Anything that isn't a ticket, such as
+# "login-mockups", starts an exploration of that name (see explore_prompt).
 ticket_prefix = "PROJ"
 
 # Placeholders: {ticket}, {worktree} (the ticket's worktree, root/<TICKET>-<slug>), {root},
@@ -20,6 +21,11 @@ start_prompt = """We're starting work on {ticket}. Read context.md, then fetch {
 Once you've read it, run {ctui} blurb {ticket} "<one-line summary of the ticket, under 60 characters>" so it shows on my dashboard. \
 Then decide what kind of work it is and run {ctui} type {ticket} <{types}>. \
 It prints the stages of that work and what to do next. Follow it."""
+
+# For an exploration: what you type at `n` is the name, then optionally what it's about, e.g.
+# "login-mockups try a card layout". {brief} is that text, or "ask me." if you typed none.
+explore_prompt = """We're starting an exploration called {ticket}. It has no Jira ticket. Read context.md, \
+then run {ctui} type {ticket} explore. It prints what to do next. Follow it. What we're exploring: {brief}"""
 
 finish_prompt = """We're wrapping up {ticket}. Check that everything in the {ticket} worktree is committed and pushed \
 and tell me if anything isn't. If it's all clean, run {ctui} stage {ticket} finish, then use scripts/finish-feature \
@@ -42,7 +48,9 @@ approve_prompt = "Approved, carry on."
 # Kinds of work. Claude picks one with `ctui type`, which prints the stages and the instructions,
 # and reports each stage with `ctui stage`. Jumping ahead marks the stages in between as skipped.
 # "approve" is a stage where the work waits for your approval of the stage before it; the dashboard
-# shows it as "[ implement ◆ ]". Defining [types.X] replaces the default X; you can add new types.
+# shows it as "[ implement ◆ ]". A type with no stages (explore) shows no pipeline, and `ctui stage`
+# does nothing for it. label is what the dashboard shows instead of the name in capitals.
+# Defining [types.X] replaces the default X; you can add new types.
 [types.feat]
 colour = "#5fafff"
 stages = ["start", "investigate", "spec", "approve", "tests", "approve", "implement", "approve", "checks", "mr", "demo", "finish"]
@@ -55,6 +63,17 @@ show the tests pass and wait for my approval. Then run the checks, open the MR a
 colour = "#ff875f"
 stages = ["start", "repro", "verify", "spec", "approve", "tests", "approve", "fix", "approve", "checks", "mr", "demo", "finish"]
 instructions = "Use the fix-bug skill for {ticket}."
+
+[types.explore]
+colour = "#87d7af"
+label = "XPLR"
+stages = []
+instructions = """There's no fixed process and no stages to report. Once you know what we're exploring, run \
+{ctui} blurb {ticket} "<one-line summary, under 60 characters>" so it shows on my dashboard. \
+An exploration is usually design mockups, an experiment in the codebase, or documentation and diagrams \
+in documentation/ at the superrepo root (an Astro site). If it isn't clear which, or what I want, ask me. \
+Before you change any files, run scripts/start-feature --explore {ticket} [<submodule>...] with the \
+submodules you need. For work only in documentation/ at the superrepo root, give no submodules."""
 
 [types.review]
 colour = "#d787d7"

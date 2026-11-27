@@ -24,7 +24,8 @@ The top panel lists tickets with their status icon, work type and stage pipeline
 shows the selected ticket's blurb, checked-out submodules and worktree. The bottom panel is its live screen.
 
 Worktrees are expected to be named `<TICKET>-<slug>` (for example `PROJ-5166-fix-rounding`), with the
-branch named the same. ctui takes the ticket from the front of the name.
+branch named the same. ctui takes the ticket from the front of the name. An exploration's worktree is
+named exactly after the exploration (for example `login-mockups`).
 
 The blurb is written by Claude: the default `start_prompt` asks it to run
 `ctui blurb TICKET "<summary>"` after it reads the Jira ticket. ctui-launched sessions are allowed to
@@ -33,7 +34,7 @@ You can also run `ctui blurb` yourself to change it.
 
 ## Work types and stages
 
-Each kind of work (by default `bug`, `feat` and `review`) has a colour and a list of stages, set in
+Each kind of work (by default `bug`, `feat`, `review` and `explore`) has a colour and a list of stages, set in
 `config.toml` under `[types.<name>]`. After reading the ticket, Claude picks one with
 `ctui type TICKET bug`. That prints the stages and the type's `instructions` (for example, which skill
 to use). Claude then runs `ctui stage TICKET <stage>` as it enters each stage.
@@ -47,6 +48,22 @@ to use). Claude then runs `ctui stage TICKET <stage>` as it enters each stage.
   stages and where it is, so it keeps reporting.
 - A worktree whose branch has `branch.<branch>.review = true` in the superrepo's git config shows as
   REVIEW even without a ctui session (with no pipeline, since its stage isn't known).
+
+## Explorations
+
+Not all work has a ticket or a fixed process. At `n`, type a name instead of a ticket, optionally
+followed by what it's about: `login-mockups try a card layout for the login page`. Claude starts with
+`explore_prompt`, which skips Jira and sets the type to `explore`. With no brief, it asks you.
+
+`explore` has no stages: the row shows just the type (as `XPLR`, its `label`) and name, and the blurb Claude writes says what
+it's about. `ctui stage` does nothing for it, so `finish_prompt` still works. Its instructions cover
+the usual kinds of exploration (design mockups, experiments in the codebase, and docs and diagrams in
+the `documentation/` Astro site) and tell Claude to make a worktree with `scripts/start-feature --explore <name> [<submodule>...]`
+before it changes files (no submodules for work only in the superrepo-root `documentation/`). A spike that has a ticket goes through the normal start, and Claude can pick
+`explore` for it.
+
+An exploration with no worktree drops off the list when Claude exits. Type its name at `n` again to
+resume the conversation.
 
 The pulse uses 24-bit colour. Inside tmux, ctui always sends it and tmux converts it for terminals that
 can't show it. Tell tmux your terminal can, for example `set -ag terminal-overrides ",xterm-256color:RGB"`,
@@ -127,7 +144,7 @@ bind-key C-d run-shell "tmux select-window -t '=claude:dash' && tmux switch-clie
 |---|---|
 | `j`/`k`, `g`/`G` | move |
 | `enter`/`l` | open the session. If Claude isn't running, it resumes the ticket's last conversation. |
-| `n` | new session. Type `5170` or `PROJ-5170` and Claude starts in `main/` with `start_prompt`. |
+| `n` | new session. Type `5170` or `PROJ-5170` and Claude starts in `main/` with `start_prompt`, or a name for an exploration. |
 | `i` | send a reply without switching (blocked while a prompt is showing) |
 | `d` | review the worktree's submodules in tuicr (see above) |
 | `f` | send `finish_prompt` (Claude checks it's pushed, then runs `finish-feature`) |

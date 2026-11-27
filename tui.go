@@ -272,8 +272,12 @@ func (m *model) open(r row) tea.Cmd {
 	return nil
 }
 
+// newSession starts (or resumes) a session from what you typed at `n`: a ticket, or an exploration
+// name, optionally followed by a brief.
 func (m *model) newSession(input string) {
-	t, err := m.cfg.NormalizeTicket(input)
+	id, brief, _ := strings.Cut(strings.TrimSpace(input), " ")
+	brief = strings.TrimSpace(brief)
+	t, err := m.cfg.NormalizeTicket(id)
 	if err != nil {
 		m.say(false, "%v", err)
 		return
@@ -287,13 +291,14 @@ func (m *model) newSession(input string) {
 	}
 	st := readState(t)
 	_, wtExists := m.wts[t]
-	if wtExists && st.SessionID != "" {
+	// An exploration may never get a worktree, so its name alone is enough to resume it.
+	if st.SessionID != "" && (wtExists || !isTicket(t)) {
 		_, err = launch(m.cfg, t, "", st.SessionID)
 		if err == nil {
 			m.say(true, "resumed %s", t)
 		}
 	} else {
-		_, err = launch(m.cfg, t, m.cfg.Prompt(m.cfg.StartPrompt, t), "")
+		_, err = launch(m.cfg, t, m.startPrompt(t, brief), "")
 		if err == nil {
 			m.say(true, "started %s (enter to open)", t)
 		}
@@ -304,6 +309,22 @@ func (m *model) newSession(input string) {
 	}
 	m.refresh(true)
 	m.selectTicket(t)
+}
+
+// startPrompt is the first prompt for a new session: start_prompt for a ticket, with the brief
+// after it, or explore_prompt for an exploration.
+func (m *model) startPrompt(t, brief string) string {
+	if isTicket(t) {
+		p := m.cfg.Prompt(m.cfg.StartPrompt, t)
+		if brief != "" {
+			p += "\n\n" + brief
+		}
+		return p
+	}
+	if brief == "" {
+		brief = "ask me."
+	}
+	return strings.ReplaceAll(m.cfg.Prompt(m.cfg.ExplorePrompt, t), "{brief}", brief)
 }
 
 func (m *model) finish(r row) {
@@ -453,7 +474,7 @@ func (m *model) updateNormal(msg tea.KeyMsg) tea.Cmd {
 	case "?":
 		m.mode = mHelp
 	case "n":
-		return m.startInput(mNew, "new ticket: ")
+		return m.startInput(mNew, "new ticket or exploration: ")
 	case "enter", "l":
 		if ok {
 			return m.open(r)

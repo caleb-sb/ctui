@@ -20,13 +20,17 @@ type Worktree struct {
 // ticketKey matches the ticket at the front of a worktree dir name such as "PROJ-5166-fix-rounding".
 var ticketKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*-[0-9]+`)
 
+// isTicket reports whether s is a whole ticket key such as "PROJ-5166", rather than an exploration name.
+func isTicket(s string) bool { return s != "" && ticketKey.FindString(s) == s }
+
 // ticketFromDir returns the ticket a worktree dir belongs to: "PROJ-5166-fix-rounding" gives
-// "PROJ-5166". A name that doesn't start with a ticket is returned as it is.
+// "PROJ-5166". A name that doesn't start with a ticket is an exploration, named by the whole dir
+// in lowercase.
 func ticketFromDir(name string) string {
 	if m := ticketKey.FindString(name); m != "" {
 		return strings.ToUpper(m)
 	}
-	return name
+	return strings.ToLower(name)
 }
 
 // listWorktrees returns the superrepo's worktrees keyed by ticket, leaving out main.
